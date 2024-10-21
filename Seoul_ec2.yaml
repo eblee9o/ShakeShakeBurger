@@ -1,0 +1,177 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Default EC2 stack for the ShakeShakeBurger Web Service
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project Name
+  RegionName:
+    Type: String
+    Description: Region Name
+
+Mappings:
+  CidrMap:
+    ap-northeast-2:
+      VpcCidr: 10.1.0.0/16
+    sa-east-1:
+      VpcCidr: 172.17.0.0/16 
+  AmiMap:
+    ap-northeast-2:
+      Ami: ami-07d737d4d8119ad79
+    sa-east-1:
+      Ami: ami-07a943af5a5ec252b
+
+Resources:
+  #보안그룹 - public
+   #보안그룹 - pri생성하기
+  Pubsg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Public Instance Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-pub-sg"
+
+  #ec2(template로 변경)
+  SeoulPubWeb1:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      KeyName: "shake-key"
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref Pubsg
+      SubnetId: !ImportValue SeoulPubSn1Id 
+      Tags:
+        - Key : Name
+          Value : SeoulPubWeb1
+
+  SeoulPubWeb2:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      KeyName: "shake-key"
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref Pubsg
+      SubnetId: !ImportValue SeoulPubSn2Id 
+      Tags:
+        - Key : Name
+          Value : SeoulPubWeb2
+
+  SeoulPriWeb3:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref Pubsg
+      SubnetId: !ImportValue SeoulPriSn3Id 
+      Tags:
+        - Key : Name
+          Value : SeoulPriWeb3
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+
+  SeoulPriWeb4:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref Pubsg
+      SubnetId: !ImportValue SeoulPriSn4Id 
+      Tags:
+        - Key : Name
+          Value : SeoulPriWeb4
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+
+#ALB 생성 : pri3,4
+#alb sg
+  SeoulAlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AWS::Region} Web ALB Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-alb-sg"
+#alb tg
+  SeoulAlbTg:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-alb-tg"
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: '/'
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      VpcId: !ImportValue VpcId
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-alb-tg"
+#alb        
+  SeoulAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Name: !Sub "${ProjectName}-web-alb"
+      SecurityGroups:
+        - !Ref SeoulAlbSg
+      Subnets:
+        - !ImportValue SeoulPriSn3Id
+        - !ImportValue SeoulPriSn4Id
+  AppAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SeoulAlbTg
+      LoadBalancerArn: !Ref SeoulAlb
+      Port: 8080
+      Protocol: HTTP
+
+...
