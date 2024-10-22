@@ -24,7 +24,6 @@ Mappings:
 
 Resources:
   #보안그룹 - public
-   #보안그룹 - pri생성하기
   Pubsg:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -46,21 +45,43 @@ Resources:
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-${RegionName}-pub-sg"
-
-  #ec2(template로 변경)
-  SeoulPubWeb1:
-    Type: 'AWS::EC2::Instance'
-    Properties: 
-      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-      KeyName: "shake-key"
-      InstanceType: t2.micro
-      SecurityGroupIds: 
-        - !Ref Pubsg
-      SubnetId: !ImportValue SeoulPubSn1Id 
+  #보안그룹
+  Prisg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Private Instance Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key : Name
-          Value : SeoulPubWeb1
+          Value : !Sub "${ProjectName}-${RegionName}-pri-sg"
 
+  #ec2
+  # SeoulPubWeb1: -> NAT INSTANCE 생성함
+  #   Type: 'AWS::EC2::Instance'
+  #   Properties: 
+  #     ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+  #     KeyName: "shake-key"
+  #     InstanceType: t2.micro
+  #     SecurityGroupIds: 
+  #       - !Ref Pubsg
+  #     SubnetId: !ImportValue SeoulPubSn1Id 
+  #     Tags:
+  #       - Key : Name
+  #         Value : SeoulPubWeb1
+      
   SeoulPubWeb2:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -72,7 +93,7 @@ Resources:
       SubnetId: !ImportValue SeoulPubSn2Id 
       Tags:
         - Key : Name
-          Value : SeoulPubWeb2
+          Value : Seoul-Web
 
   SeoulPriWeb3:
     Type: 'AWS::EC2::Instance'
@@ -150,6 +171,10 @@ Resources:
       HealthyThresholdCount: 3
       UnhealthyThresholdCount: 3
       VpcId: !ImportValue VpcId
+      TargetType: instance
+      Targets:
+        - Id: !ImportValue NatInstance
+        - Id: !Ref SeoulPubWeb2
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-alb-tg"
@@ -162,16 +187,17 @@ Resources:
       SecurityGroups:
         - !Ref SeoulAlbSg
       Subnets:
-        - !ImportValue SeoulPriSn3Id
-        - !ImportValue SeoulPriSn4Id
-  AppAlbListener:
+        - !ImportValue SeoulPubSn1Id
+        - !ImportValue SeoulPubSn2Id
+  SeoulAlbListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref SeoulAlbTg
       LoadBalancerArn: !Ref SeoulAlb
-      Port: 8080
+      Port: 80
       Protocol: HTTP
+
 
 ...

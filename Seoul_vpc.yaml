@@ -55,13 +55,13 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${ProjectName}-igw"
-
 #vpc-igw attatch
   IgwAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref SeoulIgw
       VpcId: !Ref SeoulVPC
+
 #서브넷
   SeoulPubSn1:
     Type: AWS::EC2::Subnet
@@ -101,8 +101,8 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${ProjectName}-${RegionName}-Seoulpri-sn4"
-
-#RouteTable12
+##Route table
+#RouteTable12 -> 기본경로 : alb
   SeoulPubRt12:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -127,8 +127,7 @@ Resources:
       RouteTableId: !Ref SeoulPubRt12
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref SeoulIgw
-
-#RouteTable34
+#RouteTable34 -> 기본경로 : igw
   SeoulPriRt34:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -146,14 +145,94 @@ Resources:
     Properties:
       RouteTableId: !Ref SeoulPriRt34
       SubnetId: !Ref SeoulPriSn4
+  # PriRt34DefaultRoute:
+  #   Type: AWS::EC2::Route
+  #   DependsOn: IgwAttachment  
+  #   Properties:
+  #     RouteTableId: !Ref SeoulPriRt34
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     GatewayId: !Ref NatGateway
+
   PriRt34DefaultRoute:
     Type: AWS::EC2::Route
-    DependsOn: IgwAttachment
+    DependsOn: NatInstance  # NAT 인스턴스가 먼저 생성되어야 함
     Properties:
       RouteTableId: !Ref SeoulPriRt34
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref SeoulIgw
+      InstanceId: !Ref NatInstance
 
+# NAT Gateway & EIP
+  NatGatewayEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-Eip"
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatGatewayEip
+    Properties:
+      AllocationId: !GetAtt NatGatewayEip.AllocationId
+      SubnetId: !Ref SeoulPubSn2
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-NAT=Gateway"
+
+#NAT Instance SG
+  NatInstanceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref SeoulVPC
+      GroupDescription: !Sub "${AWS::Region} Nat Instance Security Group"
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: !FindInMap [CidrMap, !Ref "AWS::Region", VpcCidr]
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-nat-instance-sg"
+
+  NatInstanceSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: CreateSgIngress
+    Properties:
+      GroupId: !GetAtt NatInstanceSg.GroupId
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: !Ref SeoulPubIp
+#NAT Instance 
+  NatInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      KeyName: "shake-key"
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
+            - !Ref NatInstanceSg
+          SubnetId: !Ref SeoulPubSn1
+      SourceDestCheck: false
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-nat-instance"
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+          sysctl -p /etc/sysctl.conf
+          yum install -y iptables-services
+          systemctl start iptables
+          systemctl enable iptables
+          iptables -F
+          iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          service iptables save
+# 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
+
+
+      
 # Outputs
 Outputs:
   VpcId:
@@ -181,7 +260,15 @@ Outputs:
     Value: !Ref SeoulPriSn4
     Export:
       Name: SeoulPriSn4Id
-
-
-
+  SeoulPriRt34:
+    Description: SeoulPriRt34
+    Value: !Ref SeoulPriRt34
+    Export:
+      Name: SeoulPriRt34
+  NatInstance:
+    Description: NatInstance
+    Value: !Ref NatInstance
+    Export:
+      Name: NatInstance
+  
 ...
