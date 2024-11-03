@@ -23,11 +23,29 @@ Mappings:
       Ami: ami-07a943af5a5ec252b
 
 Resources:
-  #보안그룹 - public
-  Pubsg:
+#보안그룹 - web
+  SeoulWebSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "${AWS::Region} Public Instance Security Group"
+      GroupDescription: "${AWS::Region} Public Web Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-web-sg"
+#보안그룹 - seoul-sg-natweb
+  SeoulNatWebSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
       VpcId: !ImportValue VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -42,20 +60,20 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.1.0.0/16
       Tags:
         - Key : Name
-          Value : !Sub "${ProjectName}-${RegionName}-pub-sg"
-  #보안그룹
-  Prisg:
+          Value : !Sub "${ProjectName}-${RegionName}-nat-web-sg"
+#보안그룹 - seoul-alb-sg
+  SeoulAlbSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "${AWS::Region} Private Instance Security Group"
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
       VpcId: !ImportValue VpcId
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0 
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
@@ -66,99 +84,77 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key : Name
-          Value : !Sub "${ProjectName}-${RegionName}-pri-sg"
+          Value : !Sub "${ProjectName}-${RegionName}-alb-sg"
 
-  #ec2
-  # SeoulPubWeb1: -> NAT INSTANCE 생성함
-  #   Type: 'AWS::EC2::Instance'
-  #   Properties: 
-  #     ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-  #     KeyName: "shake-key"
-  #     InstanceType: t2.micro
-  #     SecurityGroupIds: 
-  #       - !Ref Pubsg
-  #     SubnetId: !ImportValue SeoulPubSn1Id 
-  #     Tags:
-  #       - Key : Name
-  #         Value : SeoulPubWeb1
-      
-  SeoulPubWeb2:
+  #인스턴스 생성
+  SeoulPubWeb:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-      KeyName: "shake-key"
+      KeyName: "seoul-test"
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulWebSg
       SubnetId: !ImportValue SeoulPubSn2Id 
       Tags:
         - Key : Name
-          Value : Seoul-Web
+          Value : Seoul-Pub-Web
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          sudo systemctl restart sshd
+          sudo yum update
+          sudo python3.7 -m pip install --upgrade pip
+          sudo pip install Flask
 
+  # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
   SeoulPriWeb3:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulNatWebSg
       SubnetId: !ImportValue SeoulPriSn3Id 
       Tags:
         - Key : Name
-          Value : SeoulPriWeb3
+          Value : Seoul-Pri-Web3
       UserData:
         Fn::Base64: |
           #!/bin/bash
           echo "p@ssw0rd" | passwd --stdin root
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          systemctl restart sshd
-          yum install -y httpd
-          systemctl start httpd
-          systemctl enable httpd
-
+          sudo systemctl restart sshd
+          sudo yum update
+          sudo python3.7 -m pip install --upgrade pip
+          sudo pip install Flask
   SeoulPriWeb4:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulNatWebSg
       SubnetId: !ImportValue SeoulPriSn4Id 
       Tags:
         - Key : Name
-          Value : SeoulPriWeb4
+          Value : Seoul-Pri-Web4
       UserData:
         Fn::Base64: |
           #!/bin/bash
           echo "p@ssw0rd" | passwd --stdin root
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          systemctl restart sshd
-          yum install -y httpd
-          systemctl start httpd
-          systemctl enable httpd
+          sudo systemctl restart sshd
+          sudo yum update
+          sudo python3.7 -m pip install --upgrade pip
+          sudo pip install Flask
 
 #ALB 생성 : pri3,4
-#alb sg
-  SeoulAlbSg:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: !Sub "${AWS::Region} Web ALB Security Group"
-      VpcId: !ImportValue VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key : Name
-          Value : !Sub "${ProjectName}-alb-sg"
 #alb tg
   SeoulAlbTg:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -173,8 +169,8 @@ Resources:
       VpcId: !ImportValue VpcId
       TargetType: instance
       Targets:
-        - Id: !ImportValue NatInstance
-        - Id: !Ref SeoulPubWeb2
+        - Id: !Ref SeoulPriWeb3
+        - Id: !Ref SeoulPriWeb4
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-alb-tg"
@@ -182,13 +178,15 @@ Resources:
   SeoulAlb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Scheme: internet-facing
-      Name: !Sub "${ProjectName}-web-alb"
+      # internet-facing : 인터넷에 직접 노출되어 외부 트래픽을 받게 합니다.
+      # Scheme: internet-facing 
+      Scheme: internal
+      Name: !Sub "${ProjectName}-alb"
       SecurityGroups:
         - !Ref SeoulAlbSg
       Subnets:
-        - !ImportValue SeoulPubSn1Id
-        - !ImportValue SeoulPubSn2Id
+        - !ImportValue SeoulPriSn3Id
+        - !ImportValue SeoulPriSn4Id
   SeoulAlbListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
