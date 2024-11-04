@@ -105,10 +105,10 @@ Resources:
           echo "p@ssw0rd" | passwd --stdin root
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          sudo systemctl restart sshd
-          sudo yum update
-          sudo python3.7 -m pip install --upgrade pip
-          sudo pip install Flask
+          systemctl restart sshd
+          yum update
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
 
   # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
   SeoulPriWeb3:
@@ -128,10 +128,22 @@ Resources:
           echo "p@ssw0rd" | passwd --stdin root
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          sudo systemctl restart sshd
-          sudo yum update
-          sudo python3.7 -m pip install --upgrade pip
-          sudo pip install Flask
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo "from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    return 'Hello, World!'
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80, debug=True)" > /app/app.py
+          nohup python3 /app/app.py &
+
   SeoulPriWeb4:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -149,10 +161,21 @@ Resources:
           echo "p@ssw0rd" | passwd --stdin root
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          sudo systemctl restart sshd
-          sudo yum update
-          sudo python3.7 -m pip install --upgrade pip
-          sudo pip install Flask
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo "from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    return 'Hello, World!'
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80, debug=True)" > /app/app.py
+          nohup python3 /app/app.py &
 
 #ALB 생성 : pri3,4
 #alb tg
