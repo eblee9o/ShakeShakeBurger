@@ -97,6 +97,7 @@ Resources:
         - !Ref SeoulWebSg
       SubnetId: !ImportValue SeoulPubSn2Id 
       Tags:
+<<<<<<< HEAD
         - Key: Name
           Value: Seoul-Pub-Web
       UserData:
@@ -149,8 +150,11 @@ Resources:
   </html>" > /app/template/index.html
 
 
+=======
+        - Key : Name
+          Value : Seoul-Web
+>>>>>>> 2189633dc70dd6ffcc8608c92ae96ffa30b1b682
 
-  # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
   SeoulPriWeb3:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -169,6 +173,7 @@ Resources:
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
+<<<<<<< HEAD
           yum update -y
           python3.7 -m pip install --upgrade pip
           pip install Flask
@@ -185,6 +190,12 @@ if __name__ == '__main__':
           nohup python3 /app/app.py &
 
   ####
+=======
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+
+>>>>>>> 2189633dc70dd6ffcc8608c92ae96ffa30b1b682
   SeoulPriWeb4:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -203,6 +214,7 @@ if __name__ == '__main__':
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
+<<<<<<< HEAD
           yum update -y
           python3.7 -m pip install --upgrade pip
           pip install Flask
@@ -217,6 +229,11 @@ def hello_world():
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80, debug=True)" > /app/app.py
           nohup python3 /app/app.py &
+=======
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+>>>>>>> 2189633dc70dd6ffcc8608c92ae96ffa30b1b682
 
 #ALB 생성 : pri3,4
 #alb tg
