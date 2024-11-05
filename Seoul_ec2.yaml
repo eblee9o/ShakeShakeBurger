@@ -23,11 +23,29 @@ Mappings:
       Ami: ami-07a943af5a5ec252b
 
 Resources:
-  #보안그룹 - public
-  Pubsg:
+#보안그룹 - web
+  SeoulWebSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "${AWS::Region} Public Instance Security Group"
+      GroupDescription: "${AWS::Region} Public Web Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-web-sg"
+#보안그룹 - seoul-sg-natweb
+  SeoulNatWebSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
       VpcId: !ImportValue VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -42,20 +60,20 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.1.0.0/16
       Tags:
         - Key : Name
-          Value : !Sub "${ProjectName}-${RegionName}-pub-sg"
-  #보안그룹
-  Prisg:
+          Value : !Sub "${ProjectName}-${RegionName}-nat-web-sg"
+#보안그룹 - seoul-alb-sg
+  SeoulAlbSg:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "${AWS::Region} Private Instance Security Group"
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
       VpcId: !ImportValue VpcId
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0 
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
@@ -66,46 +84,108 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key : Name
-          Value : !Sub "${ProjectName}-${RegionName}-pri-sg"
+          Value : !Sub "${ProjectName}-${RegionName}-alb-sg"
 
-  #ec2
-  # SeoulPubWeb1: -> NAT INSTANCE 생성함
-  #   Type: 'AWS::EC2::Instance'
-  #   Properties: 
-  #     ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-  #     KeyName: "shake-key"
-  #     InstanceType: t2.micro
-  #     SecurityGroupIds: 
-  #       - !Ref Pubsg
-  #     SubnetId: !ImportValue SeoulPubSn1Id 
-  #     Tags:
-  #       - Key : Name
-  #         Value : SeoulPubWeb1
-      
-  SeoulPubWeb2:
+  #인스턴스 생성 app.py, template>index.html 생성
+  SeoulPubWeb:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-      KeyName: "shake-key"
+      KeyName: "seoul-test"
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulWebSg
       SubnetId: !ImportValue SeoulPubSn2Id 
       Tags:
         - Key : Name
-          Value : Seoul-Web
+          Value : Seoul-Pub-Web
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          pip install requests==2.6
+          mkdir -p /app/templates
+          mkdir -p /app
+          echo '
+          from flask import Flask, jsonify, render_template
+          import requests
 
+          app = Flask(__name__)
+
+          @app.route("/")
+          def html_page():
+              return render_template("index.html")
+
+          # 다른 서버에 HTTP GET 요청을 보내는 API
+          @app.route("/api")
+          def call_external_api():
+              url = "https://api.example.com/data" 
+              try:
+                  response = requests.get(url)
+                  response.raise_for_status()  
+                  data = response.json()  
+                  return jsonify(data) 
+              except requests.exceptions.RequestException as e:
+                  return jsonify(error=str(e)), 500 
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py         
+          echo '
+          <!DOCTYPE html>
+          <html lang="ko">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Hello World</title>
+              <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+          </head>
+          <body>
+              <h1>Hello, World!</h1>
+              <p>이 페이지는 Flask로 만든 HTML입니다.</p>
+              <button id="fetch-data">데이터 가져오기</button>
+              <div id="result"></div>
+
+              <script>
+                  $(document).ready(function() {
+                      $('#fetch-data').click(function() {
+                          $.ajax({
+                              url: 'http://3.35.8.38/api', 
+                              method: 'GET',
+                              success: function(data) {
+                                  $('#result').html(JSON.stringify(data, null, 2)); // JSON 데이터 표시
+                              },
+                              error: function(xhr, status, error) {
+                                  $('#result').html('오류: ' + error); // 오류 메시지 표시
+                              }
+                          });
+                      });
+                  });
+              </script>
+          </body>
+          </html> ' > /app/templates/index.html 
+          # Flask 애플리케이션 실행
+          python3 /app/app.py &          
+          
+
+
+  # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
   SeoulPriWeb3:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulNatWebSg
       SubnetId: !ImportValue SeoulPriSn3Id 
       Tags:
         - Key : Name
-          Value : SeoulPriWeb3
+          Value : Seoul-Pri-Web3
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -113,21 +193,34 @@ Resources:
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
-          yum install -y httpd
-          systemctl start httpd
-          systemctl enable httpd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo '
+          from flask import Flask, jsonify
+          app = Flask(__name__)
 
+          @app.route("/")
+          def hello_world():
+              return jsonify(message="Hello, World!")
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
+          nohup python3 /app/app.py &
+
+  ####
   SeoulPriWeb4:
     Type: 'AWS::EC2::Instance'
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
       InstanceType: t2.micro
       SecurityGroupIds: 
-        - !Ref Pubsg
+        - !Ref SeoulNatWebSg
       SubnetId: !ImportValue SeoulPriSn4Id 
       Tags:
         - Key : Name
-          Value : SeoulPriWeb4
+          Value : Seoul-Pri-Web4
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -135,30 +228,23 @@ Resources:
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
-          yum install -y httpd
-          systemctl start httpd
-          systemctl enable httpd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo '
+          from flask import Flask
+          app = Flask(__name__)
+
+          @app.route("/")
+          def hello_world():
+              return "Hello, World!""
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
+          nohup python3 /app/app.py &
 
 #ALB 생성 : pri3,4
-#alb sg
-  SeoulAlbSg:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: !Sub "${AWS::Region} Web ALB Security Group"
-      VpcId: !ImportValue VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key : Name
-          Value : !Sub "${ProjectName}-alb-sg"
 #alb tg
   SeoulAlbTg:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -173,8 +259,8 @@ Resources:
       VpcId: !ImportValue VpcId
       TargetType: instance
       Targets:
-        - Id: !ImportValue SeoulPriSn3
-        - Id: !ImportValue SeoulPriSn4
+        - Id: !Ref SeoulPriWeb3
+        - Id: !Ref SeoulPriWeb4
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-alb-tg"
@@ -182,13 +268,15 @@ Resources:
   SeoulAlb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Scheme: internet-facing
-      Name: !Sub "${ProjectName}-web-alb"
+      # internet-facing : 인터넷에 직접 노출되어 외부 트래픽을 받게 합니다.
+      # Scheme: internet-facing 
+      Scheme: internal
+      Name: !Sub "${ProjectName}-alb"
       SecurityGroups:
         - !Ref SeoulAlbSg
       Subnets:
-        - !ImportValue SeoulPubSn1Id
-        - !ImportValue SeoulPubSn2Id
+        - !ImportValue SeoulPriSn3Id
+        - !ImportValue SeoulPriSn4Id
   SeoulAlbListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
