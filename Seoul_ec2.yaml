@@ -89,6 +89,7 @@ Resources:
   #인스턴스 생성 app.py, template>index.html 생성
   SeoulPubWeb:
     Type: 'AWS::EC2::Instance'
+    DependsOn: SeoulAlb
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
       KeyName: "seoul-test"
@@ -111,6 +112,7 @@ Resources:
           pip install Flask
           pip install requests==2.6
           mkdir -p /app
+          ALB_DNS_NAME="{{!GetAtt SeoulAlb.DNSName}}"
           echo '
           from flask import Flask, jsonify, render_template
           import requests
@@ -124,7 +126,7 @@ Resources:
           # 다른 서버에 HTTP GET 요청을 보내는 API
           @app.route("/api")
           def call_external_api():
-              url = "https://api.example.com/data" 
+              url = "https://$ALB_DNS_NAME" 
               try:
                   response = requests.get(url)
                   response.raise_for_status()  
@@ -137,6 +139,7 @@ Resources:
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
           nohup python3 /app/app.py &
           mkdir /app/templates
+          PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
           echo '
           <!DOCTYPE html>
           <html lang="ko">
@@ -144,10 +147,30 @@ Resources:
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>Hello World</title>
+              <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
           </head>
           <body>
               <h1>Hello, World!</h1>
               <p>이 페이지는 Flask로 만든 HTML입니다.</p>
+              <button id="fetch-data">데이터 가져오기</button>
+              <div id="result"></div>
+
+              <script>
+                  $(document).ready(function() {
+                      $('#fetch-data').click(function() {
+                          $.ajax({
+                              url: '$PUBLIC_IP/api', 
+                              method: 'GET',
+                              success: function(data) {
+                                  $('#result').html(JSON.stringify(data, null, 2));
+                              },
+                              error: function(xhr, status, error) {
+                                  $('#result').html('오류: ' + error); 
+                              }
+                          });
+                      });
+                  });
+              </script>
           </body>
           </html>' > /app/templates/index.html               
 
