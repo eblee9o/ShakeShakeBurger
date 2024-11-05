@@ -98,83 +98,8 @@ Resources:
       SubnetId: !ImportValue SeoulPubSn2Id 
       Tags:
         - Key : Name
-          Value : Seoul-Pub-Web
-      UserData:
-        Fn::Base64: |
-          #!/bin/bash
-          echo "p@ssw0rd" | passwd --stdin root
-          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
-          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          systemctl restart sshd
-          yum update -y
-          python3.7 -m pip install --upgrade pip
-          pip install Flask
-          pip install requests==2.6
-          mkdir -p /app/templates
-          mkdir -p /app
-          echo '
-          from flask import Flask, jsonify, render_template
-          import requests
+          Value : Seoul-Web
 
-          app = Flask(__name__)
-
-          @app.route("/")
-          def html_page():
-              return render_template("index.html")
-
-          # 다른 서버에 HTTP GET 요청을 보내는 API
-          @app.route("/api")
-          def call_external_api():
-              url = "https://api.example.com/data" 
-              try:
-                  response = requests.get(url)
-                  response.raise_for_status()  
-                  data = response.json()  
-                  return jsonify(data) 
-              except requests.exceptions.RequestException as e:
-                  return jsonify(error=str(e)), 500 
-
-          if __name__ == "__main__":
-              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py         
-          echo '
-          <!DOCTYPE html>
-          <html lang="ko">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Hello World</title>
-              <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-          </head>
-          <body>
-              <h1>Hello, World!</h1>
-              <p>이 페이지는 Flask로 만든 HTML입니다.</p>
-              <button id="fetch-data">데이터 가져오기</button>
-              <div id="result"></div>
-
-              <script>
-                  $(document).ready(function() {
-                      $('#fetch-data').click(function() {
-                          $.ajax({
-                              url: 'http://3.35.8.38/api', 
-                              method: 'GET',
-                              success: function(data) {
-                                  $('#result').html(JSON.stringify(data, null, 2)); // JSON 데이터 표시
-                              },
-                              error: function(xhr, status, error) {
-                                  $('#result').html('오류: ' + error); // 오류 메시지 표시
-                              }
-                          });
-                      });
-                  });
-              </script>
-          </body>
-          </html> ' > /app/templates/index.html 
-          # Flask 애플리케이션 실행
-          python3 /app/app.py &          
-          
-
-
-  # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
   SeoulPriWeb3:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -193,23 +118,10 @@ Resources:
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
-          yum update -y
-          python3.7 -m pip install --upgrade pip
-          pip install Flask
-          mkdir -p /app
-          echo '
-          from flask import Flask, jsonify
-          app = Flask(__name__)
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
 
-          @app.route("/")
-          def hello_world():
-              return jsonify(message="Hello, World!")
-
-          if __name__ == "__main__":
-              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
-          nohup python3 /app/app.py &
-
-  ####
   SeoulPriWeb4:
     Type: 'AWS::EC2::Instance'
     Properties: 
@@ -228,21 +140,9 @@ Resources:
           sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
           sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
           systemctl restart sshd
-          yum update -y
-          python3.7 -m pip install --upgrade pip
-          pip install Flask
-          mkdir -p /app
-          echo '
-          from flask import Flask
-          app = Flask(__name__)
-
-          @app.route("/")
-          def hello_world():
-              return "Hello, World!""
-
-          if __name__ == "__main__":
-              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
-          nohup python3 /app/app.py &
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
 
 #ALB 생성 : pri3,4
 #alb tg
