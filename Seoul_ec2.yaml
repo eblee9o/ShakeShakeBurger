@@ -173,8 +173,8 @@ Resources:
       VpcId: !ImportValue VpcId
       TargetType: instance
       Targets:
-        - Id: !ImportValue NatInstance
-        - Id: !Ref SeoulPubWeb2
+        - Id: !ImportValue SeoulPriSn3
+        - Id: !ImportValue SeoulPriSn4
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-alb-tg"
