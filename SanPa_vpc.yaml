@@ -1,0 +1,244 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Default VPC stack for the ShakeShakeBurger Web Service
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project Name
+  RegionName:
+    Type: String
+    Description: Region Name
+  SaoPauloPubIp:
+    Type: String
+    Description: SaoPaulo Public IP Address
+    Default: 0.0.0.0/0
+
+Mappings:
+  CidrMap:
+    ap-northeast-2:
+      VpcCidr: 10.1.0.0/16
+      PubSn1Cidr: 10.1.1.0/24
+      PubSn2Cidr: 10.1.2.0/24
+      PriSn3Cidr: 10.1.3.0/24
+      PriSn4Cidr: 10.1.4.0/24
+    sa-east-1:
+      VpcCidr: 10.3.0.0/16
+      PubSn1Cidr: 10.3.1.0/16
+      PubSn2Cidr: 10.3.2.0/16
+      WebSn3Cidr: 10.3.3.0/16
+      WebSn4Cidr: 10.3.4.0/16     
+  AmiMap:
+    ap-northeast-2:
+      Ami: ami-07d737d4d8119ad79
+    sa-east-1:
+      Ami: ami-05bb854ba6b6c23c9
+
+Conditions:
+  CreateSgIngress: !Equals [!Ref "AWS::Region", sa-east-1]
+
+Resources:
+#VPC 생성
+  SaoPauloVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [CidrMap, !Ref "AWS::Region", VpcCidr]
+      Tags:
+       - Key: Name
+         Value: SaoPauloVPC
+#인터넷 게이트웨이
+  SaoPauloIgw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: SaoPauloIgw 
+#vpc-igw attatch
+  IgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref SaoPauloIgw
+      VpcId: !Ref SaoPauloVPC
+#서브넷
+  SaoPauloPubSn1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [CidrMap, !Ref "AWS::Region", PubSn1Cidr]
+      MapPublicIpOnLaunch: true  # 퍼블릭 IP 자동 할당
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-SaoPaulopub-sn1"
+  SaoPauloPubSn2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [CidrMap, !Ref "AWS::Region", PubSn2Cidr]
+      MapPublicIpOnLaunch: true  # 퍼블릭 IP 자동 할당
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-SaoPaulopub-sn2"
+  SaoPauloPriSn3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !FindInMap [CidrMap, !Ref "AWS::Region", PriSn3Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-SaoPaulopri-sn3"
+  SaoPauloPriSn4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !FindInMap [CidrMap, !Ref "AWS::Region", PriSn4Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${RegionName}-SaoPaulopri-sn4"
+##Route table
+#RouteTable12 -> 기본경로 : alb
+  SaoPauloPubRt12:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      Tags:
+      - Key: Name
+        Value: SaoPauloPubRt12
+  PubRt12Sn1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref SaoPauloPubRt12
+      SubnetId: !Ref SaoPauloPubSn1
+  PubRt12Sn2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref SaoPauloPubRt12
+      SubnetId: !Ref SaoPauloPubSn2
+  PubRt12DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: IgwAttachment
+    Properties:
+      RouteTableId: !Ref SaoPauloPubRt12
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref SaoPauloIgw
+#RouteTable34 -> 기본경로 : NAT Instance
+  SaoPauloPriRt34:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      Tags:
+      - Key: Name
+        Value: SaoPauloPriRt34
+  PriRt34Sn1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref SaoPauloPriRt34
+      SubnetId: !Ref SaoPauloPriSn3
+  PriRt34Sn2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref SaoPauloPriRt34
+      SubnetId: !Ref SaoPauloPriSn4
+  PriRt34DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatInstance  # NAT 인스턴스가 먼저 생성되어야 함
+    Properties:
+      RouteTableId: !Ref SaoPauloPriRt34
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NatInstance
+
+  #NAT Instance SG
+  NatInstanceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref SaoPauloVPC
+      GroupDescription: !Sub "${AWS::Region} Nat Instance Security Group"
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: !FindInMap [CidrMap, !Ref "AWS::Region", VpcCidr]
+      Tags:
+        - Key : Name
+          Value : !Sub "SaoPaulo-nat-instance-sg"
+  ###### 모든 트래픽 허용 ????
+  NatInstanceSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: CreateSgIngress
+    Properties:
+      GroupId: !GetAtt NatInstanceSg.GroupId
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: "0.0.0.0/0"
+  #NAT Instance 
+  NatInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
+            - !Ref NatInstanceSg
+          SubnetId: !Ref SaoPauloPubSn1
+      SourceDestCheck: false
+      Tags:
+        - Key : Name
+          Value : !Sub "SaoPaulo-nat-instance"
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+          sysctl -p /etc/sysctl.conf
+          yum install -y iptables-services
+          systemctl start iptables
+          systemctl enable iptables
+          iptables -F
+          iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          service iptables save
+
+# Outputs
+Outputs:
+  VpcId:
+    Description: The VPC ID
+    Value: !Ref SaoPauloVPC
+    Export:
+      Name: VpcId
+  SaoPauloPubSn1Id:
+    Description: The Public Subnet1 ID
+    Value: !Ref SaoPauloPubSn1
+    Export:
+      Name: SaoPauloPubSn1Id
+  SaoPauloPubSn2Id:
+    Description: The Public Subnet2 ID
+    Value: !Ref SaoPauloPubSn2
+    Export:
+      Name: SaoPauloPubSn2Id
+  SaoPauloPriSn3Id:
+    Description: The Private Subnet3 ID
+    Value: !Ref SaoPauloPriSn3
+    Export:
+      Name: SaoPauloPriSn3Id
+  SaoPauloPriSn4Id:
+    Description: The Private Subnet4 ID
+    Value: !Ref SaoPauloPriSn4
+    Export:
+      Name: SaoPauloPriSn4Id
+  SaoPauloPriRt34:
+    Description: SaoPauloPriRt34
+    Value: !Ref SaoPauloPriRt34
+    Export:
+      Name: SaoPauloPriRt34
+  NatInstance:
+    Description: NatInstance
+    Value: !Ref NatInstance
+    Export:
+      Name: NatInstance
+  
+...
