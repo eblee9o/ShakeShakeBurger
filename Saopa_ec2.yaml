@@ -1,0 +1,301 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Default EC2 stack for the ShakeShakeBurger Web Service
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project Name
+  RegionName:
+    Type: String
+    Description: Region Name
+
+Mappings:
+  CidrMap:
+    ap-northeast-2:
+      VpcCidr: 10.1.0.0/16
+    sa-east-1:
+      VpcCidr: 172.17.0.0/16 
+  AmiMap:
+    ap-northeast-2:
+      Ami: ami-07d737d4d8119ad79
+    sa-east-1:
+      Ami: ami-05bb854ba6b6c23c9
+
+Resources:
+#보안그룹 - web
+  SaoPauloWebSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Public Web Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-web-sg"
+#보안그룹 - SaoPaulo-sg-natweb
+  SaoPauloNatWebSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.1.0.0/16
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-nat-web-sg"
+#보안그룹 - SaoPaulo-alb-sg
+  SaoPauloAlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "${AWS::Region} Nat Web Instance Security Group"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-${RegionName}-alb-sg"
+
+  #인스턴스 생성 app.py, template>index.html 생성
+  SaoPauloPubWeb:
+    Type: 'AWS::EC2::Instance'
+    DependsOn: SaoPauloAlb
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      KeyName: "shake-saoPaluo"
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref SaoPauloWebSg
+      SubnetId: !ImportValue SaoPauloPubSn2Id 
+      Tags:
+        - Key : Name
+          Value : SaoPaulo-Pub-Web
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          pip install requests==2.6
+          mkdir -p /app
+          # ALB_DNS_NAME="{{!GetAtt SaoPauloAlb.DNSName}}"
+          # ALB DNS 이름을 동적으로 가져오기
+          #ALB_DNS_NAME=$(aws elbv2 describe-load-balancers --names "SaoPauloAlb" --query "LoadBalancers[0].DNSName" --output text)
+          # ALB DNS 이름을 로그에 기록하거나 다른 작업에 사용
+          #echo "ALB DNS Name: $ALB_DNS_NAME" > /var/log/alb_dns_name.log
+
+          echo '
+          from flask import Flask, jsonify, render_template
+          import requests
+
+          app = Flask(__name__)
+
+          @app.route("/")
+          def html_page():
+              return render_template("index.html")
+
+          # 다른 서버에 HTTP GET 요청을 보내는 API
+          @app.route("/api")
+          def call_external_api():
+              url = "https://api.example.com/data" 
+              try:
+                  response = requests.get(url)
+                  response.raise_for_status()  
+                  data = response.json()  
+                  return jsonify(data) 
+              except requests.exceptions.RequestException as e:
+                  return jsonify(error=str(e)), 500 
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
+          nohup python3 /app/app.py &
+          PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+          mkdir /app/templates
+          echo '
+          <!DOCTYPE html>
+          <html lang="ko">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Hello World</title>
+              <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+          </head>
+          <body>
+              <h1>Hello, World!</h1>
+              <p>이 페이지는 Flask로 만든 HTML입니다.</p>
+              <button id="fetch-data">데이터 가져오기</button>
+              <div id="result"></div>
+
+              <script>
+                  $(document).ready(function() {
+                      $('#fetch-data').click(function() {
+                          $.ajax({
+                              url: '$PUBLIC_IP/api', 
+                              method: 'GET',
+                              success: function(data) {
+                                  $('#result').html(JSON.stringify(data, null, 2));
+                              },
+                              error: function(xhr, status, error) {
+                                  $('#result').html('오류: ' + error); 
+                              }
+                          });
+                      });
+                  });
+              </script>
+          </body>
+          </html>' > /app/templates/index.html               
+
+  # 프라이빗 유저데이터에 파이선 설정&플라스크 설치하는거 넣기
+  SaoPauloPriWeb3:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref SaoPauloNatWebSg
+      SubnetId: !ImportValue SaoPauloPriSn3Id 
+      Tags:
+        - Key : Name
+          Value : SaoPaulo-Pri-Web3
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo '
+          from flask import Flask, jsonify
+          app = Flask(__name__)
+
+          @app.route("/")
+          def hello_world():
+              return jsonify(message="Hello, World!")
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
+          nohup python3 /app/app.py &
+
+  ####
+  SaoPauloPriWeb4:
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref SaoPauloNatWebSg
+      SubnetId: !ImportValue SaoPauloPriSn4Id 
+      Tags:
+        - Key : Name
+          Value : SaoPaulo-Pri-Web4
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          echo "p@ssw0rd" | passwd --stdin root
+          sed -i "s/^#PermitRootLogin yes/PermitRootLogin yes/g" /etc/ssh/sshd_config
+          sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          systemctl restart sshd
+          yum update -y
+          python3.7 -m pip install --upgrade pip
+          pip install Flask
+          mkdir -p /app
+          echo '
+          from flask import Flask
+          app = Flask(__name__)
+
+          @app.route("/")
+          def hello_world():
+              return "Hello, World!""
+
+          if __name__ == "__main__":
+              app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
+          nohup python3 /app/app.py &
+
+#ALB 생성 : pri3,4
+#alb tg
+  SaoPauloAlbTg:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-alb-tg"
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: '/'
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      VpcId: !ImportValue VpcId
+      TargetType: instance
+      Targets:
+        - Id: !Ref SaoPauloPriWeb3
+        - Id: !Ref SaoPauloPriWeb4
+      Tags:
+        - Key : Name
+          Value : !Sub "${ProjectName}-alb-tg"
+#alb        
+  SaoPauloAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      # internet-facing : 인터넷에 직접 노출되어 외부 트래픽을 받게 합니다.
+      # Scheme: internet-facing 
+      Scheme: internal
+      Name: !Sub "${ProjectName}-alb"
+      SecurityGroups:
+        - !Ref SaoPauloAlbSg
+      Subnets:
+        - !ImportValue SaoPauloPriSn3Id
+        - !ImportValue SaoPauloPriSn4Id
+  SaoPauloAlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SaoPauloAlbTg
+      LoadBalancerArn: !Ref SaoPauloAlb
+      Port: 80
+      Protocol: HTTP
+
+# Outputs
+Outputs:
+  SaoPauloAlbDNS:
+    Description: SaoPauloAlb
+    Value: !GetAtt SaoPauloAlb.DNSName
+
+...
