@@ -92,7 +92,7 @@ Resources:
     DependsOn: SeoulAlb
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-      KeyName: "seoul-test"
+      KeyName: "shake-seoul"
       InstanceType: t2.micro
       SecurityGroupIds: 
         - !Ref SeoulWebSg
@@ -112,7 +112,12 @@ Resources:
           pip install Flask
           pip install requests==2.6
           mkdir -p /app
-          ALB_DNS_NAME="{{!GetAtt SeoulAlb.DNSName}}"
+          # ALB_DNS_NAME="{{!GetAtt SeoulAlb.DNSName}}"
+          # ALB DNS 이름을 동적으로 가져오기
+          #ALB_DNS_NAME=$(aws elbv2 describe-load-balancers --names "SeoulAlb" --query "LoadBalancers[0].DNSName" --output text)
+          # ALB DNS 이름을 로그에 기록하거나 다른 작업에 사용
+          #echo "ALB DNS Name: $ALB_DNS_NAME" > /var/log/alb_dns_name.log
+
           echo '
           from flask import Flask, jsonify, render_template
           import requests
@@ -126,7 +131,7 @@ Resources:
           # 다른 서버에 HTTP GET 요청을 보내는 API
           @app.route("/api")
           def call_external_api():
-              url = "https://$ALB_DNS_NAME" 
+              url = "https://api.example.com/data" 
               try:
                   response = requests.get(url)
                   response.raise_for_status()  
@@ -138,8 +143,8 @@ Resources:
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
           nohup python3 /app/app.py &
-          mkdir /app/templates
           PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+          mkdir /app/templates
           echo '
           <!DOCTYPE html>
           <html lang="ko">
@@ -287,5 +292,10 @@ Resources:
       Port: 80
       Protocol: HTTP
 
+# Outputs
+Outputs:
+  SeoulAlbDNS:
+    Description: SeoulAlb
+    Value: !GetAtt SeoulAlb.DNSName
 
 ...
