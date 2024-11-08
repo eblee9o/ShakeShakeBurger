@@ -123,10 +123,10 @@ Resources:
           def html_page():
               return render_template("index.html")
 
-          # 다른 서버에 HTTP GET 요청을 보내는 API
+          # 다른 서버에 HTTP GET 요청을 보내는 API -> 로드밸런서 DNS주소 변경
           @app.route("/api")
           def call_external_api():
-              url = "https://$ALB_DNS_NAME" 
+              url = "http://internal-ssouel-alb-87441315.ap-northeast-2.elb.amazonaws.com" 
               try:
                   response = requests.get(url)
                   response.raise_for_status()  
@@ -157,15 +157,15 @@ Resources:
 
               <script>
                   $(document).ready(function() {
-                      $('#fetch-data').click(function() {
+                      $("#fetch-data").click(function() {
                           $.ajax({
-                              url: '$PUBLIC_IP/api', 
-                              method: 'GET',
+                              url: "http://$PUBLIC_IP/api",
+                              method: "GET",
                               success: function(data) {
-                                  $('#result').html(JSON.stringify(data, null, 2));
+                                  $("#result").html(JSON.stringify(data, null, 2));
                               },
                               error: function(xhr, status, error) {
-                                  $('#result').html('오류: ' + error); 
+                                  $("#result").html("오류:"  + error);
                               }
                           });
                       });
@@ -203,7 +203,7 @@ Resources:
 
           @app.route("/")
           def hello_world():
-              return jsonify(message="Hello, World!")
+              return jsonify(message="Hello, World111!")
 
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
@@ -233,12 +233,12 @@ Resources:
           pip install Flask
           mkdir -p /app
           echo '
-          from flask import Flask
+          from flask import Flask, jsonify
           app = Flask(__name__)
 
           @app.route("/")
           def hello_world():
-              return "Hello, World!""
+              return jsonify(message="Hello, World222!")
 
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
