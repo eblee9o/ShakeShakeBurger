@@ -92,7 +92,7 @@ Resources:
     DependsOn: SeoulAlb
     Properties: 
       ImageId: !FindInMap [AmiMap, !Ref "AWS::Region", Ami]
-      KeyName: "seoul-test"
+      KeyName: "shake-seoul"
       InstanceType: t2.micro
       SecurityGroupIds: 
         - !Ref SeoulWebSg
