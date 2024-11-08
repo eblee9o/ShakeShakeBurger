@@ -15,7 +15,7 @@ Mappings:
     ap-northeast-2:
       VpcCidr: 10.1.0.0/16
     sa-east-1:
-      VpcCidr: 172.17.0.0/16 
+      VpcCidr: 10.3.0.0/16
   AmiMap:
     ap-northeast-2:
       Ami: ami-07d737d4d8119ad79
@@ -63,7 +63,7 @@ Resources:
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
-          CidrIp: 10.1.0.0/16
+          CidrIp: 10.3.0.0/16
       Tags:
         - Key : Name
           Value : !Sub "${ProjectName}-${RegionName}-nat-web-sg"
@@ -112,12 +112,7 @@ Resources:
           pip install Flask
           pip install requests==2.6
           mkdir -p /app
-          # ALB_DNS_NAME="{{!GetAtt SaoPauloAlb.DNSName}}"
-          # ALB DNS 이름을 동적으로 가져오기
-          #ALB_DNS_NAME=$(aws elbv2 describe-load-balancers --names "SaoPauloAlb" --query "LoadBalancers[0].DNSName" --output text)
-          # ALB DNS 이름을 로그에 기록하거나 다른 작업에 사용
-          #echo "ALB DNS Name: $ALB_DNS_NAME" > /var/log/alb_dns_name.log
-
+          ALB_DNS_NAME="{{!GetAtt SaoPauloAlb.DNSName}}"
           echo '
           from flask import Flask, jsonify, render_template
           import requests
@@ -128,10 +123,10 @@ Resources:
           def html_page():
               return render_template("index.html")
 
-          # 다른 서버에 HTTP GET 요청을 보내는 API
+          # 다른 서버에 HTTP GET 요청을 보내는 API -> 로드밸런서 DNS주소 변경
           @app.route("/api")
           def call_external_api():
-              url = "https://api.example.com/data" 
+              url = "http://internal-ssouel-alb-87441315.ap-northeast-2.elb.amazonaws.com" 
               try:
                   response = requests.get(url)
                   response.raise_for_status()  
@@ -143,8 +138,8 @@ Resources:
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
           nohup python3 /app/app.py &
-          PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
           mkdir /app/templates
+          PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
           echo '
           <!DOCTYPE html>
           <html lang="ko">
@@ -162,15 +157,15 @@ Resources:
 
               <script>
                   $(document).ready(function() {
-                      $('#fetch-data').click(function() {
+                      $("#fetch-data").click(function() {
                           $.ajax({
-                              url: '$PUBLIC_IP/api', 
-                              method: 'GET',
+                              url: "http://$PUBLIC_IP/api",
+                              method: "GET",
                               success: function(data) {
-                                  $('#result').html(JSON.stringify(data, null, 2));
+                                  $("#result").html(JSON.stringify(data, null, 2));
                               },
                               error: function(xhr, status, error) {
-                                  $('#result').html('오류: ' + error); 
+                                  $("#result").html("오류:"  + error);
                               }
                           });
                       });
@@ -208,7 +203,7 @@ Resources:
 
           @app.route("/")
           def hello_world():
-              return jsonify(message="Hello, World!")
+              return jsonify(message="Hello, World111!")
 
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
@@ -238,12 +233,12 @@ Resources:
           pip install Flask
           mkdir -p /app
           echo '
-          from flask import Flask
+          from flask import Flask, jsonify
           app = Flask(__name__)
 
           @app.route("/")
           def hello_world():
-              return "Hello, World!""
+              return jsonify(message="Hello, World222!")
 
           if __name__ == "__main__":
               app.run(host="0.0.0.0", port=80, debug=True)' > /app/app.py
@@ -292,10 +287,5 @@ Resources:
       Port: 80
       Protocol: HTTP
 
-# Outputs
-Outputs:
-  SaoPauloAlbDNS:
-    Description: SaoPauloAlb
-    Value: !GetAtt SaoPauloAlb.DNSName
 
 ...
